@@ -3,8 +3,6 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 
-using namespace std;
-
 typedef HMODULE(__stdcall* pLoadLibraryA)(LPCSTR);
 typedef FARPROC(__stdcall* pGetProcAddress)(HMODULE, LPCSTR);
 
@@ -24,7 +22,7 @@ struct loaderdata
 
 };
 
-DWORD FindProcessId(string processName)
+DWORD FindProcessId(std::string processName)
 {
 	PROCESSENTRY32 processInfo;
 	processInfo.dwSize = sizeof(processInfo);
@@ -60,20 +58,20 @@ DWORD __stdcall LibraryLoader(LPVOID Memory)
 
 	PIMAGE_BASE_RELOCATION pIBR = LoaderParams->BaseReloc;
 
-	DWORD delta = (DWORD)((LPBYTE)LoaderParams->ImageBase - LoaderParams->NtHeaders->OptionalHeader.ImageBase); // Calculate the delta
+	std::ptrdiff_t delta = (std::ptrdiff_t)((LPBYTE)LoaderParams->ImageBase - LoaderParams->NtHeaders->OptionalHeader.ImageBase); // Calculate the delta
 
 	while (pIBR->VirtualAddress)
 	{
 		if (pIBR->SizeOfBlock >= sizeof(IMAGE_BASE_RELOCATION))
 		{
 			int count = (pIBR->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
-			PWORD list = (PWORD)(pIBR + 1);
+			std::ptrdiff_t* list = (std::ptrdiff_t*)(pIBR + 1);
 
 			for (int i = 0; i < count; i++)
 			{
 				if (list[i])
 				{
-					PDWORD ptr = (PDWORD)((LPBYTE)LoaderParams->ImageBase + (pIBR->VirtualAddress + (list[i] & 0xFFF)));
+					std::ptrdiff_t *ptr = (std::ptrdiff_t*)((LPBYTE)LoaderParams->ImageBase + (pIBR->VirtualAddress + (list[i] & 0xFFF)));
 					*ptr += delta;
 				}
 			}
@@ -100,7 +98,7 @@ DWORD __stdcall LibraryLoader(LPVOID Memory)
 			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
 			{
 				// Import by ordinal
-				DWORD Function = (DWORD)LoaderParams->fnGetProcAddress(hModule,
+				ULONGLONG Function = (ULONGLONG)LoaderParams->fnGetProcAddress(hModule,
 					(LPCSTR)(OrigFirstThunk->u1.Ordinal & 0xFFFF));
 
 				if (!Function)
@@ -112,7 +110,7 @@ DWORD __stdcall LibraryLoader(LPVOID Memory)
 			{
 				// Import by name
 				PIMAGE_IMPORT_BY_NAME pIBN = (PIMAGE_IMPORT_BY_NAME)((LPBYTE)LoaderParams->ImageBase + OrigFirstThunk->u1.AddressOfData);
-				DWORD Function = (DWORD)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name);
+				ULONGLONG Function = (ULONGLONG)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name);
 				if (!Function)
 					return FALSE;
 
@@ -143,14 +141,29 @@ DWORD __stdcall stub()
 int main()
 {
 	// Target Dll
-	LPCSTR Dll = "D:\\Projects\\ManualMap\\Release\\TargetDll.dll";
+	std::string DllFilepath; // should be std::filesystem::path. TODO: update >= C++17
+	std::cout << "Enter a dll filepath: ";
+	std::cin >> DllFilepath;
 
 	DWORD ProcessId = FindProcessId("Target.exe");
+	if (ProcessId == 0)
+	{
+		std::cout << "Failed to find 'Target.exe' among the enumerated process list. "
+			<< "You must run the target process!\n";
+		std::cin.get();
+		return EXIT_FAILURE;
+	}
 
 	loaderdata LoaderParams;
 
-	HANDLE hFile = CreateFileA(Dll, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+	HANDLE hFile = CreateFileA(DllFilepath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
 		OPEN_EXISTING, 0, NULL); // Open the DLL
+	if (!hFile) {
+		std::cout << "Failed to create/open file '" << DllFilepath << "', this is done to open the DLL. "
+			<< "This error may be caused by the directory not existing.\n";
+		std::cin.get();
+		return EXIT_FAILURE;
+	}
 
 	DWORD FileSize = GetFileSize(hFile, NULL);
 	PVOID FileBuffer = VirtualAlloc(NULL, FileSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -217,5 +230,5 @@ int main()
 	// free the allocated loader code
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 
-	return 0;
+	return EXIT_SUCCESS;
 }

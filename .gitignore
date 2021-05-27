@@ -45,3 +45,13 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+ManualInjector/Release/
+ManualInjector/x64/
+SampleDll/Release/
+SampleDll/x64/
+Target/Release/
+Target/x64/
+.vs/
+*.pdb
+*.vcxproj.user
